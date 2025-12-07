@@ -188,11 +188,13 @@ class BEVFusionModelWrapper(torch.nn.Module):
                 points: List[torch.Tensor],  # list[B] (N_i, 4)
                 lidar2img: torch.Tensor,  # (B, N_cam, 4, 4)  必须 Tensor
                 cam2img: torch.Tensor,  # (B, N_cam, 4, 4)
+                cam2lidar: torch.Tensor,  # (B, N_cam, 4, 4)
                 ):
+        print('img_backbone:', type(self.model.img_backbone))
         B, N_CAM = imgs.shape[:2]
 
         inputs = dict(
-            imgs=imgs,
+            # imgs=imgs,
             points=points,
         )
 
@@ -205,8 +207,9 @@ class BEVFusionModelWrapper(torch.nn.Module):
             # 把张量拆成 numpy 再塞进去（框架里会再转回 np/torch）
             sample.set_metainfo(dict(
                 img_shape=[(imgs.shape[-2], imgs.shape[-1])] * N_CAM,
-                lidar2img=lidar2img[b].cpu().numpy(),   # (N_cam,4,4)
-                cam2img=cam2img[b].cpu().numpy(),       # (N_cam,4,4)
+                lidar2img=lidar2img[b].cpu().numpy(),
+                cam2img=cam2img[b].cpu().numpy(),
+                cam2lidar=cam2lidar[b].cpu().numpy(),  # ←补
                 scale_factor=1.0,
                 pad_shape=(imgs.shape[-2], imgs.shape[-1]),
             ))
@@ -377,9 +380,11 @@ def main():
     example_points = [torch.randn(np.random.randint(20000, 30000), 4)
                       for _ in range(B)]
     # 外参：随便给单位矩阵，真实部署时换真标定
-    example_lidar2img = torch.eye(4).unsqueeze(0).unsqueeze(0).repeat(B, N_CAM, 1, 1)
-    example_cam2img = torch.eye(4).unsqueeze(0).unsqueeze(0).repeat(B, N_CAM, 1, 1)
-    export_tensors = (example_imgs, example_points, example_lidar2img, example_cam2img)
+    I = torch.eye(4).unsqueeze(0).unsqueeze(0).repeat(B, N_CAM, 1, 1)
+    example_lidar2img = I.clone()
+    example_cam2img = I.clone()
+    example_cam2lidar = I.clone()
+    export_tensors = (example_imgs, example_points, example_lidar2img, example_cam2img, example_cam2lidar)
     # 验证包装模型
     print("验证包装模型前向传播...")
     try:
