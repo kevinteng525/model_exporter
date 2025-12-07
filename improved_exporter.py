@@ -29,6 +29,12 @@ from typing import Dict, List, Any, Tuple, Optional
 from mmengine import init_default_scope
 
 import sys
+
+# Add the mmdetection3d directory to the path (so projects can be imported)
+mmdet3d_path = '/Users/kevinteng/src/kevinteng525/open-mmlab/mmdetection3d'
+if mmdet3d_path not in sys.path:
+    sys.path.insert(0, mmdet3d_path)
+
 print("当前Python路径:")
 for p in sys.path:
     print(f"  {p}")
@@ -148,11 +154,13 @@ class InputFlattener:
     def __init__(self):
         self.tensor_info = []
         self.flatten_mapping = {}
+        self.processed_objects = set()  # 防止循环引用
 
     def analyze_and_flatten(self, data, path=""):
         """分析并展平输入数据"""
         self.tensor_info = []
         self.flatten_mapping = {}
+        self.processed_objects = set()
 
         tensors = self._extract_tensors(data, path)
 
@@ -163,31 +171,62 @@ class InputFlattener:
         return tensors
 
     def _extract_tensors(self, data, path=""):
-        """递归提取所有张量"""
+        """
+        递归提取所有张量
+
+        特殊处理：
+        1. 跳过方法、类、模块
+        2. 跳过私有属性（以_开头）
+        3. 跳过空张量
+        4. 正确处理自定义对象
+        """
         tensors = []
 
+        # 处理张量
         if isinstance(data, torch.Tensor):
-            # 找到张量
-            info = {
-                'path': path,
-                'shape': data.shape,
-                'dtype': data.dtype,
-                'device': data.device
-            }
-            self.tensor_info.append(info)
-            tensors.append(data)
+            if data.numel() > 0:  # 跳过空张量
+                info = {
+                    'path': path,
+                    'shape': data.shape,
+                    'dtype': data.dtype,
+                    'device': data.device
+                }
+                self.tensor_info.append(info)
+                tensors.append(data)
+            return tensors
 
-        elif isinstance(data, Mapping):
-            # 处理字典
+        # 处理字典
+        elif isinstance(data, dict):
             for key, value in data.items():
                 new_path = f"{path}.{key}" if path else key
                 tensors.extend(self._extract_tensors(value, new_path))
 
-        elif isinstance(data, Sequence) and not isinstance(data, str):
-            # 处理列表
+        # 处理列表和元组
+        elif isinstance(data, (list, tuple)) and not isinstance(data, str):
             for idx, item in enumerate(data):
                 new_path = f"{path}[{idx}]" if path else f"[{idx}]"
                 tensors.extend(self._extract_tensors(item, new_path))
+
+        # 处理自定义对象（只处理有实际内容的对象）
+        elif hasattr(data, '__dict__') and id(data) not in self.processed_objects and len(dir(data)) > 10:
+            self.processed_objects.add(id(data))
+
+            # 遍历对象的所有属性
+            for attr_name in dir(data):
+                # 跳过特殊方法、私有属性、模块和类
+                if (attr_name.startswith('_') or
+                    callable(getattr(data, attr_name, None)) or
+                    isinstance(getattr(data, attr_name, None), type) or
+                    attr_name in ['__dict__', '__module__', '__weakref__', '__doc__']):
+                    continue
+
+                try:
+                    attr_value = getattr(data, attr_name)
+                    new_path = f"{path}.{attr_name}" if path else attr_name
+                    tensors.extend(self._extract_tensors(attr_value, new_path))
+                except:
+                    # 忽略无法访问的属性
+                    pass
 
         return tensors
 
