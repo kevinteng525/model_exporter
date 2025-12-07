@@ -323,7 +323,7 @@ class ModelWrapper(torch.nn.Module):
         reconstructed_inputs = self.flattener.reconstruct_inputs(flat_tensors)
 
         # 调用原始模型
-        return self.original_model(**reconstructed_inputs, mode='tensor')
+        return self.original_model(**reconstructed_inputs, mode='predict')
 
 
 def load_checkpoint(model, checkpoint_path):
@@ -492,7 +492,7 @@ def main():
     print("\n--- 2. 验证原始模型前向传播 ---")
     try:
         with torch.no_grad():
-            original_outputs = model(**inputs, mode='tensor')
+            original_outputs = model(**inputs, mode='predict')
         print("✅ 原始模型前向传播成功！")
         if args.verbose:
             print("\n--- 原始输出数据结构预览 ---")
